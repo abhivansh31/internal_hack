@@ -21,7 +21,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interf
  * @notice This project is set in the future where common people uses crypto and it will act as replacement to traditional bank. Usually banks fear that a person might default a loan but this protocol is not scared of that. Instead it is more interested in giving out credit as long as collateral meets the requirement. Actually Liquidation is bad for the protocol in the sense that it is more interested in interest accumulated on the person.
  */
 contract CreditScore is ReentrancyGuard {
-    using UD60x18 for uint256;
+    using UD60x18 for uint256; // FIx library name
 
     IERC20 public immutable TB;
     address public addressOfB;
