@@ -314,21 +314,18 @@ contract CreditScore is ReentrancyGuard {
         // Calculate base score based on token count
         // Calculation not finalised yet
         // S_base = 100 + 100*(1 - e^(-(n-1)))
-        UD60x18 exponent = UD60x18.mul(UD60x18.wrap(tokenCount - 1)).neg();
-        UD60x18 eTerm = exponent.exp();
-        UD60x18 baseScore = UD60x18.wrap(100e18).add(UD60x18.wrap(100e18).sub(UD60x18.wrap(100e18).mul(eTerm)));
+        uint256 exponent = negativeExp(tokenCount - 1); // e18 precision
+        uint256 baseScore = 100+(100*exponent)/1e18; // e18 precision
 
         // Combine factors and scale to 1-200
-        UD60x18 score = baseScore.mul(entropyRatio);
-        uint256 rawScore = UD60x18.unwrap(score) / 1e16; // Convert to 0-100 scale
-
+        uint256 score = baseScore*entropyRatio;
         // Clamp between 1-200
-        if (rawScore > 200) {
+        if (score > 200) {
             return 200;
-        } else if (rawScore < 1) {
+        } else if (score < 1) {
             return 1;
         } else {
-            return rawScore;
+            return score;
         }
     }
 
