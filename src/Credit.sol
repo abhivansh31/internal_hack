@@ -57,6 +57,7 @@ contract CreditScore is ReentrancyGuard {
     uint256 PRECISION = 1e18;
     uint256 DEBT_UTILISATION_CONSTANT = 52e18;
     uint256 LOG_FACTOR = 144e16;
+    uint256 REFERENCE_LOAN_SIZE = 1000e18; // 1000$ loan size
 
     ///////////////EVENTs/////////////////////
     event CS__Collateral_Deposited(address token, uint256 amount);
@@ -221,11 +222,11 @@ contract CreditScore is ReentrancyGuard {
         if (totalCollateral == 0) return 0;
 
         // Calculate (D - U)/C ratio
-        uint256 ratio = (availableDebt - debtUtilised) * PRECISION / totalCollateral; // e18 precision
-        uint256 exponent = ratio * DEBT_UTILISATION_CONSTANT / 1e18;
+        uint256 ratio = ((availableDebt - debtUtilised) * PRECISION) / totalCollateral; // e18 precision
+        uint256 exponent = (ratio * DEBT_UTILISATION_CONSTANT) / 1e18;
 
         uint256 value = negativeExp(exponent); // e18 precision
-        score = 300 * value / 1e18;
+        score = (300 * value) / 1e18;
     }
 
     /**
@@ -287,7 +288,7 @@ contract CreditScore is ReentrancyGuard {
      */
     function calculateCollateralMixScore(address user) internal pure returns (uint256) {
         uint256 tokenCount;
-        uint256 totalValue= totalCollateralValue(user);
+        uint256 totalValue = totalCollateralValue(user);
         mapping(address token => uint256 amount) userCollateral = collateralDeposited[user];
 
         // Calculate entropy (distribution effectiveness)
@@ -299,26 +300,26 @@ contract CreditScore is ReentrancyGuard {
                 tokenCount++;
                 uint256 tokenValue = getUsdValue(token, amount);
                 // Calculate proportion of each token's value to total value
-                uint256 proportion = (tokenValue * PRECISION)/(totalValue); //For eg: 0.5e18
-                uint256 proportionlog = log2(1e18 /(proportion))  *LOG_FACTOR; //For eg: ln(1/p e18) ---> x e18
+                uint256 proportion = (tokenValue * PRECISION) / (totalValue); //For eg: 0.5e18
+                uint256 proportionlog = log2(1e18 / (proportion)) * LOG_FACTOR; //For eg: ln(1/p e18) ---> x e18
                 entropy += (proportion * proportionlog) / 1e18; // xe36
             }
         }
-        if (tokenCount == 0 ){
-            return 0; 
+        if (tokenCount == 0) {
+            return 0;
         }
 
-        uint256 maxEntropy = log2(tokenCount)*LOG_FACTOR;
-        uint256 entropyRatio = (entropy*1e18)/(maxEntropy);
+        uint256 maxEntropy = log2(tokenCount) * LOG_FACTOR;
+        uint256 entropyRatio = (entropy * 1e18) / (maxEntropy);
 
         // Calculate base score based on token count
         // Calculation not finalised yet
         // S_base = 100 + 100*(1 - e^(-(n-1)))
         uint256 exponent = negativeExp(tokenCount - 1); // e18 precision
-        uint256 baseScore = 100+(100*exponent)/1e18; // e18 precision
+        uint256 baseScore = 100 + (100 * exponent) / 1e18; // e18 precision
 
         // Combine factors and scale to 1-200
-        uint256 score = baseScore*entropyRatio;
+        uint256 score = baseScore * entropyRatio;
         // Clamp between 1-200
         if (score > 200) {
             return 200;
@@ -329,7 +330,6 @@ contract CreditScore is ReentrancyGuard {
         }
     }
 
-    // Yet to check this
     function _calculatePaymentImpact(Debt memory debt) internal view returns (int256) {
         if (!debt.isRepaid) {
             uint256 dueDate = debt.timestamp + debt.timePeriod;
@@ -356,7 +356,7 @@ contract CreditScore is ReentrancyGuard {
         } // On-time
 
         // Amount weight (1 + amount/reference)
-        uint256 amountWeight = PRECISION + (debt.amount * PRECISION) / referenceLoanSize;
+        uint256 amountWeight = PRECISION + (debt.amount * PRECISION) / REFERENCE_LOAN_SIZE;
 
         // Duration weight (log2(days + 1))
         uint256 durationDays = debt.timePeriod / 86400;
@@ -364,9 +364,13 @@ contract CreditScore is ReentrancyGuard {
 
         // Time decay (starts after 6 months, never <50%)
         uint256 monthsSinceRepayment = (block.timestamp - debt.actualRepaymentTimestamp) / 2592000;
-        uint256 decayFactor = monthsSinceRepayment > 6
-            ? max(0.5 * PRECISION, PRECISION - (0.1 * (monthsSinceRepayment - 6) * PRECISION))
-            : PRECISION;
+        uint256 decayFactor;
+        if (monthsSinceRepayment > 6) {
+            uint256 calculatedDecay = PRECISION - (0.1 * (monthsSinceRepayment - 6) * PRECISION);
+            decayFactor = calculatedDecay < (0.5 * PRECISION) ? (0.5 * PRECISION) : calculatedDecay;
+        } else {
+            decayFactor = PRECISION;
+        }
 
         // Final impact
         return (basePoints * int256(amountWeight) * int256(durationWeight) * int256(decayFactor)) / (PRECISION ** 3);
@@ -451,46 +455,83 @@ contract CreditScore is ReentrancyGuard {
 
     function valueOfTokenRepaymentAmount(Debt memory debt) internal view returns (uint256) {
         uint256 tokenAmount = tokenRepaymentAmount(debt);
-        return getUsdValue(addressOfB, Amount);
+        return getUsdValue(addressOfB, tokenAmount);
     }
 
     /**
-     *  
+     *
      * @param x : value whose log2 is to be calculated
-     * @notice This function will calculate the log2 of the value  
+     * @notice This function will calculate the log2 of the value
      * @dev This is taken from ethereum exchange
      */
+    function log2(uint256 x) internal returns (uint256 y) {
+        assembly {
+            let arg := x
+            x := sub(x, 1)
+            x := or(x, div(x, 0x02))
+            x := or(x, div(x, 0x04))
+            x := or(x, div(x, 0x10))
+            x := or(x, div(x, 0x100))
+            x := or(x, div(x, 0x10000))
+            x := or(x, div(x, 0x100000000))
+            x := or(x, div(x, 0x10000000000000000))
+            x := or(x, div(x, 0x100000000000000000000000000000000))
+            x := add(x, 1)
+            let m := mload(0x40)
+            mstore(m, 0xf8f9cbfae6cc78fbefe7cdc3a1793dfcf4f0e8bbd8cec470b6a28a7a5a3e1efd)
+            mstore(add(m, 0x20), 0xf5ecf1b3e9debc68e1d9cfabc5997135bfb7a7a3938b7b606b5b4b3f2f1f0ffe)
+            mstore(add(m, 0x40), 0xf6e4ed9ff2d6b458eadcdf97bd91692de2d4da8fd2d0ac50c6ae9a8272523616)
+            mstore(add(m, 0x60), 0xc8c0b887b0a8a4489c948c7f847c6125746c645c544c444038302820181008ff)
+            mstore(add(m, 0x80), 0xf7cae577eec2a03cf3bad76fb589591debb2dd67e0aa9834bea6925f6a4a2e0e)
+            mstore(add(m, 0xa0), 0xe39ed557db96902cd38ed14fad815115c786af479b7e83247363534337271707)
+            mstore(add(m, 0xc0), 0xc976c13bb96e881cb166a933a55e490d9d56952b8d4e801485467d2362422606)
+            mstore(add(m, 0xe0), 0x753a6d1b65325d0c552a4d1345224105391a310b29122104190a110309020100)
+            mstore(0x40, add(m, 0x100))
+            let magic := 0x818283848586878898a8b8c8d8e8f929395969799a9b9d9e9faaeb6bedeeff
+            let shift := 0x100000000000000000000000000000000000000000000000000000000000000
+            let a := div(mul(x, magic), shift)
+            y := div(mload(add(m, sub(255, a))), shift)
+            y := add(y, mul(256, gt(arg, 0x8000000000000000000000000000000000000000000000000000000000000000)))
+        }
+    }
 
-    function log2(uint x) internal returns (uint y){
-   assembly {
-        let arg := x
-        x := sub(x,1)
-        x := or(x, div(x, 0x02))
-        x := or(x, div(x, 0x04))
-        x := or(x, div(x, 0x10))
-        x := or(x, div(x, 0x100))
-        x := or(x, div(x, 0x10000))
-        x := or(x, div(x, 0x100000000))
-        x := or(x, div(x, 0x10000000000000000))
-        x := or(x, div(x, 0x100000000000000000000000000000000))
-        x := add(x, 1)
-        let m := mload(0x40)
-        mstore(m,           0xf8f9cbfae6cc78fbefe7cdc3a1793dfcf4f0e8bbd8cec470b6a28a7a5a3e1efd)
-        mstore(add(m,0x20), 0xf5ecf1b3e9debc68e1d9cfabc5997135bfb7a7a3938b7b606b5b4b3f2f1f0ffe)
-        mstore(add(m,0x40), 0xf6e4ed9ff2d6b458eadcdf97bd91692de2d4da8fd2d0ac50c6ae9a8272523616)
-        mstore(add(m,0x60), 0xc8c0b887b0a8a4489c948c7f847c6125746c645c544c444038302820181008ff)
-        mstore(add(m,0x80), 0xf7cae577eec2a03cf3bad76fb589591debb2dd67e0aa9834bea6925f6a4a2e0e)
-        mstore(add(m,0xa0), 0xe39ed557db96902cd38ed14fad815115c786af479b7e83247363534337271707)
-        mstore(add(m,0xc0), 0xc976c13bb96e881cb166a933a55e490d9d56952b8d4e801485467d2362422606)
-        mstore(add(m,0xe0), 0x753a6d1b65325d0c552a4d1345224105391a310b29122104190a110309020100)
-        mstore(0x40, add(m, 0x100))
-        let magic := 0x818283848586878898a8b8c8d8e8f929395969799a9b9d9e9faaeb6bedeeff
-        let shift := 0x100000000000000000000000000000000000000000000000000000000000000
-        let a := div(mul(x, magic), shift)
-        y := div(mload(add(m,sub(255,a))), shift)
-        y := add(y, mul(256, gt(arg, 0x8000000000000000000000000000000000000000000000000000000000000000)))
-    }  
-}
+    function calculatePaymentHistoryScore(address user) internal view returns (uint256) {
+        Debt[] storage userDebts = userDebt[user];
+        uint256 totalScore = 0;
+        uint256 debtCount = userDebts.length;
+
+        if (debtCount == 0) {
+            return 0;
+        }
+
+        for (uint256 i = 0; i < debtCount; i++) {
+            int256 impactScore = _calculatePaymentImpact(userDebts[i]);
+            // Convert negative scores to 0 to avoid underflow
+            if (impactScore > 0) {
+                totalScore += uint256(impactScore);
+            }
+        }
+
+        // Normalize score to be between 0-400
+        uint256 normalizedScore = (totalScore * 400) / (debtCount * 100);
+        return normalizedScore > 400 ? 400 : normalizedScore;
+    }
+
+    function calculateCreditScore(address user) internal {
+        uint256 paymentScore = calculatePaymentHistoryScore(user);
+        uint256 utilizationScore = calculateCreditUtilizationScore(user);
+        uint256 collateralScore = calculateCollateralMixScore(user);
+        uint256 lengthScore = calculateLengthOfCreditScore(user, addressOfB);
+
+        // Combine all scores (40% + 30% + 20% + 10%)
+        uint256 finalScore = (paymentScore + utilizationScore + collateralScore + lengthScore);
+
+        userCreditScore[user] = finalScore;
+    }
+
+    function getCreditScore(address user) external view returns (uint256) {
+        return userCreditScore[user];
+    }
 
     ////////////////GETTERS////////////////////
 
