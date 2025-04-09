@@ -177,7 +177,7 @@ contract CreditScore is ReentrancyGuard {
      * @dev This function will iterate through all the collateral tokens and sum up their value in USD
      */
     function totalCollateralValue(address user) public returns (uint256 totalValue) {
-        mapping(address token => uint256 amount) userCollateral = collateralDeposited[user];
+        mapping(address token => uint256 amount) storage userCollateral = collateralDeposited[user];
         for (uint256 i = 0; i < collateralTokens.length; i++) {
             address token = collateralTokens[i];
             uint256 amount = userCollateral[token];
@@ -201,7 +201,7 @@ contract CreditScore is ReentrancyGuard {
             Debt storage debt = debts[i];
             uint256 endTime = debt.isRepaid ? debt.actualRepaymentTimestamp : block.timestamp;
             uint256 timeHeld = endTime - debt.timestamp;
-            debtTimeValue += debt.amount * timeHeld;
+            debtTimeValue += debt.amountOfToken * timeHeld;
         }
         return debtTimeValue;
     }
@@ -237,7 +237,7 @@ contract CreditScore is ReentrancyGuard {
         Debt[] storage debts = userDebt[user];
         for (uint256 i = 0; i < debts.length; i++) {
             if (!debts[i].isRepaid) {
-                total += debts[i].amount;
+                total += debts[i].amountOfToken;
             }
         }
         return total;
@@ -289,7 +289,7 @@ contract CreditScore is ReentrancyGuard {
     function calculateCollateralMixScore(address user) internal pure returns (uint256) {
         uint256 tokenCount;
         uint256 totalValue = totalCollateralValue(user);
-        mapping(address token => uint256 amount) userCollateral = collateralDeposited[user];
+        mapping(address token => uint256 amount)  storage userCollateral = collateralDeposited[user];
 
         // Calculate entropy (distribution effectiveness)
         uint256 entropy;
@@ -356,7 +356,7 @@ contract CreditScore is ReentrancyGuard {
         } // On-time
 
         // Amount weight (1 + amount/reference)
-        uint256 amountWeight = PRECISION + (debt.amount * PRECISION) / REFERENCE_LOAN_SIZE;
+        uint256 amountWeight = PRECISION + (debt.amountOfToken * PRECISION) / REFERENCE_LOAN_SIZE;
 
         // Duration weight (log2(days + 1))
         uint256 durationDays = debt.timePeriod / 86400;
@@ -366,8 +366,8 @@ contract CreditScore is ReentrancyGuard {
         uint256 monthsSinceRepayment = (block.timestamp - debt.actualRepaymentTimestamp) / 2592000;
         uint256 decayFactor;
         if (monthsSinceRepayment > 6) {
-            uint256 calculatedDecay = PRECISION - (0.1 * (monthsSinceRepayment - 6) * PRECISION);
-            decayFactor = calculatedDecay < (0.5 * PRECISION) ? (0.5 * PRECISION) : calculatedDecay;
+            uint256 calculatedDecay = PRECISION - ((monthsSinceRepayment - 6) * PRECISION/10);
+            decayFactor = calculatedDecay < ( PRECISION/2 ) ? (0.5 * PRECISION) : calculatedDecay;
         } else {
             decayFactor = PRECISION;
         }
@@ -401,8 +401,13 @@ contract CreditScore is ReentrancyGuard {
      * @dev Since the result will be always between 0 and 1, we multiply by 1e18 to get a more precise result
      * @dev Multiply the return value with your normalisation scalar and if not multiply by 100. Finally divide by 1e18 to get the final result
      */
+    // function negativeExp(uint256 x) public pure returns (uint256) {
+    //     return ((x.exp() - 1).mul(1e18)).div(x.exp);
+    // }
+
+    //Library causing a lot of issue.
     function negativeExp(uint256 x) public pure returns (uint256) {
-        return ((x.exp() - 1).mul(1e18)).div(x.exp);
+        return ((2**x - 1)*(1e18))/(2**x);
     }
 
     /**
