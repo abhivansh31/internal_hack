@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT
 
-// FOR ABHIVANSH - SOME FUNCTION NEEDS CORRECTION. They are ai generated and not checked. You can start integerating though as it only need function names.
+
 
 pragma solidity ^0.8.18;
 
