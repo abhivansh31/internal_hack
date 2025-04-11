@@ -57,7 +57,7 @@ contract CreditScore is ReentrancyGuard {
     uint256 PRECISION = 1e18;
     uint256 DEBT_UTILISATION_CONSTANT = 52e18;
     uint256 LOG_FACTOR = 144e16;
-    uint256 REFERENCE_LOAN_SIZE = 1000e18; // 1000$ loan size
+    uint256 REFERENCE_LOAN_SIZE = 10000e18; // 10000$ loan size
 
     ///////////////EVENTs/////////////////////
     event CS__Collateral_Deposited(address token, uint256 amount);
@@ -67,7 +67,7 @@ contract CreditScore is ReentrancyGuard {
     error CS__InvalidCollateralTokenAddress(address token);
     error CS__AmountMustBeMoreThanZero();
     error CS__InvalidDebtTokenAddress(address token);
-    error CS_TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+    error CS__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error CS__InsufficientLiquidity();
     error CS__DebtAreadyRepaid();
 
@@ -80,7 +80,7 @@ contract CreditScore is ReentrancyGuard {
         address[] memory collateralPriceFeedAddresses
     ) {
         if (collateralAddresses.length != collateralPriceFeedAddresses.length) {
-            revert CS_TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+            revert CS__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
         }
         for (uint256 i = 0; i < collateralAddresses.length; i++) {
             collateralPriceFeeds[collateralAddresses[i]] = collateralPriceFeedAddresses[i];
