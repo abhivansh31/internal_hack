@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {CreditLiquiditySystem} from "../src/CreditLiquiditySystem.sol";
+import {CreditLiquiditySystem} from "../src/Credit.sol";
 import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {MockERC20} from "../lib/openzeppelin-contracts/contracts/mocks/MockERC20.sol";
 
